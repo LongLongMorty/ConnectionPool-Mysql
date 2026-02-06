@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmysql_connection_pool.a  CMakeFiles/mysql_connection_pool.dir/src/Connection.cpp.o CMakeFiles/mysql_connection_pool.dir/src/CommonConnectionPool.cpp.o
+/usr/bin/ranlib libmysql_connection_pool.a

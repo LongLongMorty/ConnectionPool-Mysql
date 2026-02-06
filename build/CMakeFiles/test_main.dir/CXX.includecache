@@ -1,0 +1,44 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+../include/CommonConnectionPool.h
+string
+-
+queue
+-
+Connection.h
+../include/Connection.h
+mutex
+-
+atomic
+-
+thread
+-
+condition_variable
+-
+
+../include/Connection.h
+mysql/mysql.h
+-
+string
+-
+ctime
+-
+
+/home/morty/桌面/MysqlConnectionPool/test/test_main.cpp
+iostream
+-
+thread
+-
+vector
+-
+Connection.h
+/home/morty/桌面/MysqlConnectionPool/test/Connection.h
+CommonConnectionPool.h
+/home/morty/桌面/MysqlConnectionPool/test/CommonConnectionPool.h
+
