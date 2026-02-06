@@ -1,0 +1,12 @@
+# 忽略 build 文件夹
+build/
+bin/
+obj/
+
+# 忽略 VS Code 产生的本地设置
+.vscode/ipch/
+.vscode/msvc.cache
+
+# 忽略生成的可执行文件（根据你的名字修改）
+*.out
+*.exes
