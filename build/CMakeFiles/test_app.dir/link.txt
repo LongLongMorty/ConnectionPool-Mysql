@@ -1,1 +1,0 @@
-/usr/bin/c++     CMakeFiles/test_app.dir/src/main.cpp.o  -o test_app  libmysql_connection_pool.a /usr/lib/x86_64-linux-gnu/libmysqlclient.so -lpthread 
