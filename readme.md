@@ -1,117 +1,125 @@
-# ConnectionPool - MySQL数据库连接池
+# 🏊‍♂️ MySQL Connection Pool
 
-## 关键技术点
+![Language](https://img.shields.io/badge/language-C%2B%2B11-green.svg)
+![Platform](https://img.shields.io/badge/platform-Linux-blue.svg)
+![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)
+![License](https://img.shields.io/badge/license-MIT-orange.svg)
 
-- MySQL数据库编程
-- 单例模式
-- queue队列容器
-- C++11多线程编程
-- 线程互斥、线程同步通信和unique_lock
-- 基于CAS的原子整型
-- 智能指针shared_ptr
-- lambda表达式
-- 生产者-消费者线程模型
-
-## 项目背景
-
-为了提高MySQL数据库（基于C/S设计）的访问瓶颈，除了在服务器端增加缓存服务器缓存常用的数据之外（例如Redis），还可以增加连接池，来提高MySQL Server的访问效率。
-
-在高并发情况下，大量的TCP三次握手、MySQL Server连接认证、MySQL Server关闭连接回收资源和TCP四次挥手所耗费的性能时间也是很明显的，增加连接池就是为了减少这一部分的性能损耗。
-
-在市场上比较流行的连接池包括：
-- 阿里的Druid
-- C3P0
-- Apache DBCP
-
-它们对于短时间内大量的数据库增删改查操作性能的提升是很明显的，但是它们有一个共同点：**全部由Java实现**。
-
-本项目就是为了在C/C++项目中提供MySQL Server的访问效率，实现基于C++代码的数据库连接池模块。
-
-## 连接池功能点介绍
-
-连接池一般包含了数据库连接所用的IP地址、端口号、用户名和密码以及其它的性能参数，例如初始连接量、最大连接量、最大空闲时间、连接超时时间等。该项目是基于C++语言实现的连接池，主要实现以上几个所有连接池都支持的通用基础功能。
-
-### 核心参数说明
-
-#### 初始连接量（initSize）
-表示连接池事先会和MySQL Server创建initSize个数的connection连接。当应用发起MySQL访问时，不用再创建和MySQL Server新的连接，直接从连接池中获取一个可用的连接就可以。使用完成后，并不去释放connection，而是把当前connection再归还到连接池当中。
-
-#### 最大连接量（maxSize）
-当并发访问MySQL Server的请求增多时，初始连接量已经不够使用了，此时会根据新的请求数量去创建更多的连接给应用去使用，但是新创建的连接数量上限是maxSize，不能无限制的创建连接。
-
-因为每一个连接都会占用一个socket资源，一般连接池和服务器程序是部署在一台主机上的，如果连接池占用过多的socket资源，那么服务器就不能接收太多的客户端请求了。当这些连接使用完成后，再次归还到连接池当中来维护。
-
-#### 最大空闲时间（maxIdleTime）
-当访问MySQL的并发请求多了以后，连接池里面的连接数量会动态增加，上限是maxSize个，当这些连接用完再次归还到连接池当中。
-
-如果在指定的maxIdleTime里面，这些新增加的连接都没有被再次使用过，那么新增加的这些连接资源就要被回收掉，只需要保持初始连接量initSize个连接就可以了。
-
-#### 连接超时时间（connectionTimeout）
-当MySQL的并发请求量过大，连接池中的连接数量已经到达maxSize了，而此时没有空闲的连接可供使用，那么此时应用从连接池获取连接无法成功。
-
-它通过阻塞的方式获取连接的时间如果超过connectionTimeout时间，那么获取连接失败，无法访问数据库。
+**基于 C++11 实现的轻量级、高性能 MySQL 数据库连接池**。
+通过复用数据库连接，显著减少 TCP 握手与 MySQL 认证的开销，在高并发场景下将 QPS 提升数倍。
 
 ---
 
-该项目主要实现上述的连接池四大功能，其余连接池更多的扩展功能，可以自行实现。
+## 🚀 关键技术点 (Key Technologies)
 
-## 功能实现设计
+![C++](https://img.shields.io/badge/C++-11-blue)
+![CMake](https://img.shields.io/badge/Tool-CMake-orange)
+![MySQL](https://img.shields.io/badge/Database-MySQL-blue)
 
-### 代码结构
+- **MySQL Connector/C**：底层数据库驱动
+- **线程池模型**：生产者-消费者模型 Design Pattern
+- **锁机制**：`mutex`, `unique_lock`, `condition_variable` 实现线程同步
+- **C++11 特性**：`shared_ptr`, `lambda`, `atomic`, `chrono`
+- **设计模式**：单例模式 (Lazy Singleton)
 
-- **CommonConnectionPool.cpp** 和 **CommonConnectionPool.h**：连接池代码实现
-- **Connection.cpp** 和 **Connection.h**：数据库操作代码、增删改查代码实现
+## 📖 项目背景
 
-### 连接池主要功能点
+为了提高 MySQL 数据库（基于 C/S 设计）的访问瓶颈，除了在服务器端增加缓存服务器（例如 Redis）之外，增加**连接池**是提高 MySQL Server 访问效率的核心手段。
 
-1. **单例模式设计**
-   连接池只需要一个实例，所以ConnectionPool以单例模式进行设计
+在高并发情况下，大量的 **TCP 三次握手**、**MySQL Server 连接认证**、**MySQL Server 关闭连接回收资源** 和 **TCP 四次挥手** 所耗费的性能时间也是很明显的。连接池通过**复用连接**来消除这一部分的性能损耗。
 
-2. **连接获取**
-   从ConnectionPool中可以获取和MySQL的连接Connection
+## ⚙️ 功能特性
 
-3. **线程安全的连接队列**
-   空闲连接Connection全部维护在一个线程安全的Connection队列中，使用线程互斥锁保证队列的线程安全
+连接池一般包含了数据库连接所用的IP地址、端口号、用户名和密码以及其它的性能参数。
 
-4. **动态创建连接**
-   如果Connection队列为空，还需要再获取连接，此时需要动态创建连接，上限数量是maxSize
+- **初始连接量（initSize）**: 预创建连接，减少启动时的冷启动延迟。
+- **最大连接量（maxSize）**: 动态扩容，应对突发流量，同时防止耗尽服务器 Socket 资源。
+- **最大空闲时间（maxIdleTime）**: 自动回收长时间不用的空闲连接，节省资源。
+- **连接超时时间（connectionTimeout）**: 获取连接时的等待超时控制，防止请求无限阻塞。
+- **智能指针管理**: 使用 `shared_ptr` 自定义删除器，实现连接的自动归还而非销毁。
 
-5. **空闲连接回收**
-   队列中空闲连接时间超过maxIdleTime的就要被释放掉，只保留初始的initSize个连接就可以了，这个功能点需要放在独立的线程中去做
+## 🛠️ 快速开始 (Build & Run)
 
-6. **连接超时机制**
-   如果Connection队列为空，而此时连接的数量已达上限maxSize，那么等待connectionTimeout时间如果还获取不到空闲的连接，那么获取连接失败。此处从Connection队列获取空闲连接，可以使用带超时时间的mutex互斥锁来实现连接超时时间
+### 1. 环境依赖 (Requirements)
+- Linux (Tested on Ubuntu 20.04/22.04)
+- G++ (Support C++11)
+- CMake 3.x
+- MySQL Client Development Library (`libmysqlclient-dev`)
 
-7. **智能指针管理连接**
-   用户获取的连接用shared_ptr智能指针来管理，用lambda表达式定制连接释放的功能（不真正释放连接，而是把连接归还到连接池中）
+```bash
+# Ubuntu 安装依赖
+sudo apt-get install libmysqlclient-dev
+```
 
-8. **生产者-消费者模型**
-   连接的生产和连接的消费采用生产者-消费者线程模型来设计，使用了线程间的同步通信机制条件变量和互斥锁
+### 2. 编译与运行 (Compilation)
 
+```bash
+git clone https://github.com/your-repo/MySQLConnectionPool.git
+cd MysqlConnectionPool
 
-### 性能测试 (Performance Benchmark)
+# 配置文件
+# 确保项目根目录下有 mysql.ini 且配置正确
+
+# 编译
+mkdir build
+cd build
+cmake ..
+make
+
+# 运行测试
+./test_main
+```
+
+### 3. 配置文件 (Configuration)
+
+在项目根目录下创建 `mysql.ini`：
+
+```ini
+# 数据库连接池配置
+ip=127.0.0.1
+port=3306
+username=pool_user
+password=PoolPassword123!
+dbname=my_project_db
+initSize=10
+maxSize=1024
+maxIdleTime=60
+# 连接超时时间(ms)
+connectionTimeout=100
+```
+
+## 📊 性能测试 (Benchmark)
 
 为了验证连接池在高并发场景下的性能优势，本项目进行了对比压力测试。
+*测试数据: 5,000 次连续 `INSERT` 操作*
 
-#### 1. 测试环境
+| 测试场景 | 耗时 (Time) | QPS (Queries Per Second) | 提升倍数 |
+| :--- | :--- | :--- | :--- |
+| **标准连接 (无连接池)** | 28.040 s | 178 | 1x (基准) |
+| **单线程 (使用连接池)** | 12.883 s | 388 | ~2.2x |
+| **4线程并发 (使用连接池)** | 4.696 s | 1064 | **~6.0x** |
 
-- **操作系统**: Ubuntu 22.04 LTS (Linux)
-- **数据库**: MySQL 8.0.x
-- **测试硬件**: AMD R5-5600H / 4核虚拟机
-- **测试数据**: 5,000 次连续 `INSERT` 操作
+> **结论**: 在并发环境下，连接池展现了巨大的性能优势，QPS 提升超过 5 倍。
 
-#### 2. 测试结果 (Benchmark Result)
+## 📂 项目结构
 
-|                      | TIME            | QPS       |
-| -------------------- | --------------- | --------- |
-| Standard (No Pool)   | Time: 24.621  s | QPS: 203  |
-| Pool (Single-Thread) | Time: 12.880  s | QPS: 388  |
-| Pool (4-Threads)     | Time: 4.059   s | QPS: 1231 |
+```text
+├── CMakeLists.txt      # CMake 构建文件
+├── mysql.ini           # 配置文件
+├── include/            # 头文件
+│   ├── CommonConnectionPool.h
+│   ├── Connection.h
+│   └── public.h
+├── src/                # 源代码
+│   ├── CommonConnectionPool.cpp
+│   └── Connection.cpp
+└── test/               # 测试代码
+    └── test_main.cpp
+```
 
-#### 3. 结果分析
+## 📄 开源许可证 (License)
 
-1. **减少握手开销**：单线程下性能提升约 2 倍，证明了通过复用连接，省去了大量 TCP 三次握手和 MySQL 身份验证的时间。
-2. **并发优势**：在 4 线程并发下，QPS 突破 1200。连接池有效地缓解了高并发请求对数据库连接建立的压力。
-3. **稳定性**：经校验，数据库最终成功插入记录数与测试操作数（15,000 条）完全一致，证明了连接池在多线程竞争环境下的**原子性**和**可靠性**。
+本项目采用 **MIT License** 开源协议。
+这意味着你可以自由地使用、复制、修改、合并、出版发行、散布、再授权及贩售软件的副本。
 
-
+Copyright (c) 2026 Morty
