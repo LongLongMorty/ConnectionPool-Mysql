@@ -1,10 +1,21 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <chrono> // 使用高精度计时
+#include <iomanip> // 用于格式化输出
 #include "Connection.h"
 #include "CommonConnectionPool.h"
 
 using namespace std;
+using namespace std::chrono;
+
+// 辅助函数：获取当前时间点
+inline steady_clock::time_point now() { return steady_clock::now(); }
+
+// 辅助函数：计算耗时（秒）
+inline double get_elapsed_time(steady_clock::time_point start, steady_clock::time_point end) {
+    return duration_cast<milliseconds>(end - start).count() / 1000.0;
+}
 
 // 压力测试：不使用连接池
 void testWithoutPool(int count) {
@@ -13,9 +24,10 @@ void testWithoutPool(int count) {
         char sql[1024] = {0};
         sprintf(sql, "insert into user(name, age, sex) values('%s', %d, '%s')", "zhang san", 20, "male");
         
-        // 每次都要进行 TCP 握手、MySQL 身份验证
         if (conn.connect("127.0.0.1", 3306, "pool_user", "PoolPassword123!", "my_project_db")) {
             conn.update(sql);
+        } else {
+             // std::cerr << "Connect failed" << endl;
         }
     }
 }
@@ -24,44 +36,56 @@ void testWithoutPool(int count) {
 void testWithPool(int count) {
     ConnectionPool *cp = ConnectionPool::getConnectionPool();
     for (int i = 0; i < count; ++i) {
-        // 直接从池子里“借”连接，无需握手
         shared_ptr<Connection> sp = cp->getConnection();
-        char sql[1024] = {0};
-        sprintf(sql, "insert into user(name, age, sex) values('%s', %d, '%s')", "zhang san", 20, "male");
-        
         if (sp) {
+            char sql[1024] = {0};
+            sprintf(sql, "insert into user(name, age, sex) values('%s', %d, '%s')", "zhang san", 20, "male");
             sp->update(sql);
         }
     }
 }
 
+void printResult(string label, int total_op, double time_sec) {
+    cout << left << setw(25) << label 
+         << " | Time: " << setw(8) << fixed << setprecision(3) << time_sec << "s"
+         << " | QPS: " << setw(10) << (int)(total_op / time_sec) << endl;
+}
+
 int main() {
-    const int TOTAL_OP = 1000; // 测试 1000 次插入操作
+    // 增加样本量，数据会更稳定，建议测试 5000 次以上
+    const int TOTAL_OP = 5000; 
 
-    // --- 测试 1：单线程性能对比 ---
-    cout << "--- Single Thread Test (" << TOTAL_OP << " ops) ---" << endl;
+    cout << "================ Database Connection Pool Benchmark ================" << endl;
+    cout << "Total Operations: " << TOTAL_OP << endl;
+    cout << "--------------------------------------------------------------------" << endl;
 
-    clock_t start = clock();
+    // --- 测试 1：不使用连接池 (单线程) ---
+    auto start = now();
     testWithoutPool(TOTAL_OP);
-    clock_t end = clock();
-    cout << "Without Pool: " << (double)(end - start) / CLOCKS_PER_SEC << "s" << endl;
+    auto end = now();
+    printResult("Standard (No Pool)", TOTAL_OP, get_elapsed_time(start, end));
 
-    start = clock();
+    // --- 测试 2：使用连接池 (单线程) ---
+    start = now();
     testWithPool(TOTAL_OP);
-    end = clock();
-    cout << "With Pool   : " << (double)(end - start) / CLOCKS_PER_SEC << "s" << endl;
+    end = now();
+    printResult("Pool (Single-Thread)", TOTAL_OP, get_elapsed_time(start, end));
 
-    // --- 测试 2：多线程并发对比 (4 线程各执行 250 次) ---
-    cout << "\n--- Multi-Thread Test (" << TOTAL_OP << " total ops) ---" << endl;
+    // --- 测试 3：使用连接池 (多线程并发) ---
+    // 模拟真实高并发，开启 4 个线程
+    int thread_num = 4;
+    int op_per_thread = TOTAL_OP / thread_num;
     
-    start = clock();
-    thread t1(testWithPool, 250);
-    thread t2(testWithPool, 250);
-    thread t3(testWithPool, 250);
-    thread t4(testWithPool, 250);
-    t1.join(); t2.join(); t3.join(); t4.join();
-    end = clock();
-    cout << "With Pool (4 threads): " << (double)(end - start) / CLOCKS_PER_SEC << "s" << endl;
+    start = now();
+    vector<thread> threads;
+    for(int i = 0; i < thread_num; ++i) {
+        threads.emplace_back(testWithPool, op_per_thread);
+    }
+    for(auto &t : threads) t.join();
+    end = now();
+    
+    printResult("Pool (4-Threads)", TOTAL_OP, get_elapsed_time(start, end));
+    cout << "--------------------------------------------------------------------" << endl;
 
     return 0;
 }

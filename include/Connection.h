@@ -1,7 +1,7 @@
 #pragma once
 #include <mysql/mysql.h>
 #include <string>
-#include <ctime>
+#include <chrono>
 using namespace std;
 
 /*
@@ -25,9 +25,16 @@ public:
 	// 查询操作 select
 	MYSQL_RES *query(string sql);
 
-	void refreshAliveTime() { _alivetime = clock(); }						
-	clock_t getAliveeTime()const { return clock() - _alivetime; }
+	void refreshAliveTime() { _alivetime = std::chrono::high_resolution_clock::now(); }
+	// 返回空闲了多少毫秒 (ms)
+	long long getAliveeTime() const
+	{
+		auto end = std::chrono::high_resolution_clock::now();
+		// 计算差值并转换成毫秒
+		return std::chrono::duration_cast<std::chrono::milliseconds>(end - _alivetime).count();
+	}
+
 private:
 	MYSQL *_conn;		// 表示和MySQL Server的一条连接
-	clock_t _alivetime; // 记录进入空闲状态后的起始存活时间
+	std::chrono::time_point<std::chrono::high_resolution_clock> _alivetime; //记录空闲开始时间
 };

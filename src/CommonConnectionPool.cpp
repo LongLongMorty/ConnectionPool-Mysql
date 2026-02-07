@@ -32,7 +32,7 @@ void ConnectionPool::produceConnectionTask()
         // 只要当前的空闲连接数少于我们要求的初始连接数，生产者就起来干活
         while (_connectionQue.size() >= _initSize)
         {
-            cv.wait(lock); // 否则生产者就睡觉
+            _cv_producer.wait(lock); // 否则生产者就睡觉
         }
 
         // 走到这里说明队列空了，且被唤醒了
@@ -48,7 +48,7 @@ void ConnectionPool::produceConnectionTask()
         }
 
         // 通知消费者：现在有连接可以用了
-        cv.notify_all();
+        _cv_consumer.notify_all();
     }
 }
 // 线程安全的懒汉单例函数接口
@@ -117,7 +117,7 @@ shared_ptr<Connection> ConnectionPool::getConnection()
     // 1. 等待逻辑：while 防止虚假唤醒
     while (_connectionQue.empty())
     {
-        if (cv_status::timeout == cv.wait_for(lock, chrono::milliseconds(_connectionTimeout)))
+        if (cv_status::timeout == _cv_consumer.wait_for(lock, chrono::milliseconds(_connectionTimeout)))
         {
             if (_connectionQue.empty())
             {
@@ -134,7 +134,7 @@ shared_ptr<Connection> ConnectionPool::getConnection()
     // 3. 消费后立即检查并通知生产者补货
     if (_connectionQue.size() < _initSize)
     {
-        cv.notify_all(); // 叫生产者起来维持 initSize 的水位
+        _cv_producer.notify_all(); // 叫生产者起来维持 initSize 的水位
     }
 
     // 4. 包装并返回，注意 Lambda 捕获和刷新时间
@@ -143,34 +143,45 @@ shared_ptr<Connection> ConnectionPool::getConnection()
                                       unique_lock<mutex> lock(this->_queueMutex);
                                       pcon->refreshAliveTime(); // 必须刷新！标记该连接开始进入“空闲状态”
                                       this->_connectionQue.push(pcon);
-                                      this->cv.notify_all(); // 归还后通知可能正在 wait 的其他消费者
+                                      this->_cv_consumer.notify_all(); // 归还后通知可能正在 wait 的其他消费者
                                   });
 }
 void ConnectionPool::scannerConnectionTask()
 {
     for (;;)
     {
-        // 1. 定时检查
+        // 定时检查
         this_thread::sleep_for(chrono::seconds(_maxIdleTime));
 
-        // 2. 扫描并收集需要清理的连接
+        // 扫描并收集需要清理的连接
         unique_lock<mutex> lock(_queueMutex);
-        while (_connectionCnt > _initSize)
+        
+        // 用一个容器暂存要删的指针，避免在锁内销毁连接
+        vector<Connection*> toDelete;
+
+        while (_connectionQue.size() > _initSize) 
         {
             Connection *p = _connectionQue.front();
 
-            // 假设 getAliveeTime() 返回的是该连接已经空闲的毫秒数
             if (p->getAliveeTime() >= (_maxIdleTime * 1000))
             {
                 _connectionQue.pop();
-                _connectionCnt--;
-                delete p; // 释放连接（如果追求极致性能，建议移到锁外）
+                _connectionCnt--; // 别忘了 atomic 的自减
+                toDelete.push_back(p);
             }
             else
             {
                 // 队头是最老的，如果它都没超时，后面的肯定也没超时
                 break;
             }
+        }
+        // 3. 释放锁
+        lock.unlock();
+
+        // 4. 在锁外销毁连接，不影响并发性能
+        for (Connection *p : toDelete)
+        {
+            delete p; 
         }
     }
 }
