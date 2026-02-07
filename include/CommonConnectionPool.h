@@ -11,8 +11,9 @@ class ConnectionPool{
 public:
 // 获取单例实例 (线程安全)
     static ConnectionPool* getConnectionPool();
-	// 从配置文件中加载配置项
-	bool loadConfigFile();
+	// 关键：禁用拷贝构造和赋值操作
+	ConnectionPool(const ConnectionPool&) = delete;
+    ConnectionPool& operator=(const ConnectionPool&) = delete;
 	// 给外部提供接口，从连接池中获取一个可用的空闲连接
 	shared_ptr<Connection> getConnection();
 private:
@@ -35,5 +36,7 @@ private:
 	void produceConnectionTask();
 	// 扫描超过maxIdleTime时间的空闲连接，进行对于的连接回收
 	void scannerConnectionTask();
+	// 从配置文件中加载配置项
+	bool loadConfigFile();
 
 };

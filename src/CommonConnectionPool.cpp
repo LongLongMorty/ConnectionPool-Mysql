@@ -16,7 +16,7 @@ ConnectionPool::ConnectionPool()
         _connectionQue.push(p);
         _connectionCnt++;
     }
-    // 启动一个新的线程，作为连接的生产者 linux thread => pthread_create
+    // 启动一个新的线程，作为连接的生产者 
     std::thread produce([this]()
                         { this->produceConnectionTask(); });
 
@@ -61,7 +61,6 @@ bool ConnectionPool::loadConfigFile()
 {
     FILE *pf = fopen("mysql.ini", "r");
     if (pf == nullptr)
-    // 尝试在 build 目录下寻找r)
     {
         LOG("mysql.ini file is not exist!");
         return false;
@@ -88,7 +87,6 @@ bool ConnectionPool::loadConfigFile()
         string value = str.substr(idx + 1, endidx - idx - 1);
 
         // 核心：处理可能存在的 key/value 前后空格 (Trim)
-        // 简单的去掉前后空格能极大提高配置文件的容错率
 
         if (key == "ip")
             _ip = value;
