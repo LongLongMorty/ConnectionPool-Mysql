@@ -49,3 +49,7 @@ MYSQL_RES* Connection::query(string sql)
 	}
 	return mysql_use_result(_conn);
 }
+bool Connection::ping() {
+    // mysql_ping 返回 0 代表连接正常
+    return mysql_ping(_conn) == 0;
+}

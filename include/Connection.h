@@ -33,8 +33,10 @@ public:
 		// 计算差值并转换成毫秒
 		return std::chrono::duration_cast<std::chrono::milliseconds>(end - _alivetime).count();
 	}
+	// 发送一个轻量级的心跳包，返回 true 表示连接可用
+	bool ping();
 
 private:
-	MYSQL *_conn;		// 表示和MySQL Server的一条连接
-	std::chrono::time_point<std::chrono::high_resolution_clock> _alivetime; //记录空闲开始时间
+	MYSQL *_conn;															// 表示和MySQL Server的一条连接
+	std::chrono::time_point<std::chrono::high_resolution_clock> _alivetime; // 记录空闲开始时间
 };

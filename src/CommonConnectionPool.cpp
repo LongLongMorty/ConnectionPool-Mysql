@@ -16,12 +16,16 @@ ConnectionPool::ConnectionPool()
         _connectionQue.push(p);
         _connectionCnt++;
     }
-    // 启动一个新的线程，作为连接的生产者 
+    // 启动一个新的线程，作为连接的生产者
     std::thread produce([this]()
                         { this->produceConnectionTask(); });
 
     // 将线程分离，让其在后台独立运行
     produce.detach();
+    // 启动心跳/扫描线程
+    std::thread scannerThread([this]()
+                              { this->checkConnectionTask(); });
+    scannerThread.detach();
 }
 void ConnectionPool::produceConnectionTask()
 {
@@ -114,7 +118,7 @@ shared_ptr<Connection> ConnectionPool::getConnection()
 {
     unique_lock<mutex> lock(_queueMutex);
 
-    // 1. 等待逻辑：while 防止虚假唤醒
+    // 等待逻辑：while 防止虚假唤醒
     while (_connectionQue.empty())
     {
         if (cv_status::timeout == _cv_consumer.wait_for(lock, chrono::milliseconds(_connectionTimeout)))
@@ -127,17 +131,17 @@ shared_ptr<Connection> ConnectionPool::getConnection()
         }
     }
 
-    // 2. 先取出原始指针并弹出队列
+    // 先取出原始指针并弹出队列
     Connection *p = _connectionQue.front();
     _connectionQue.pop();
 
-    // 3. 消费后立即检查并通知生产者补货
+    // 消费后立即检查并通知生产者补货
     if (_connectionQue.size() < _initSize)
     {
         _cv_producer.notify_all(); // 叫生产者起来维持 initSize 的水位
     }
 
-    // 4. 包装并返回，注意 Lambda 捕获和刷新时间
+    // 包装并返回，注意 Lambda 捕获和刷新时间
     return shared_ptr<Connection>(p, [this](Connection *pcon)
                                   {
                                       unique_lock<mutex> lock(this->_queueMutex);
@@ -155,11 +159,11 @@ void ConnectionPool::scannerConnectionTask()
 
         // 扫描并收集需要清理的连接
         unique_lock<mutex> lock(_queueMutex);
-        
-        // 用一个容器暂存要删的指针，避免在锁内销毁连接
-        vector<Connection*> toDelete;
 
-        while (_connectionQue.size() > _initSize) 
+        // 用一个容器暂存要删的指针，避免在锁内销毁连接
+        vector<Connection *> toDelete;
+
+        while (_connectionQue.size() > _initSize)
         {
             Connection *p = _connectionQue.front();
 
@@ -175,13 +179,68 @@ void ConnectionPool::scannerConnectionTask()
                 break;
             }
         }
-        // 3. 释放锁
+        // 释放锁
         lock.unlock();
 
-        // 4. 在锁外销毁连接，不影响并发性能
+        // 在锁外销毁连接，不影响并发性能
         for (Connection *p : toDelete)
         {
-            delete p; 
+            delete p;
+        }
+    }
+}
+// 实现心跳检测巡逻任务
+void ConnectionPool::checkConnectionTask() {
+    for (;;) {
+        // 每隔一段时间执行一次
+        this_thread::sleep_for(chrono::seconds(_maxIdleTime));
+
+        // 获取当前待检测的连接数量快照
+        // 我们不在这里持有长锁，而是记录下需要处理多少个连接
+        unique_lock<mutex> lock(_queueMutex);
+        int check_count = _connectionQue.size();
+        lock.unlock(); // 立即释放锁！
+
+        while (check_count > 0) {
+            // 取连接 (占锁时间极短) 
+            unique_lock<mutex> loopLock(_queueMutex);
+            if (_connectionQue.empty()) {
+                // 如果队列空了（被消费者拿光了），直接停止本轮检测
+                break;
+            }
+            Connection* p = _connectionQue.front();
+            _connectionQue.pop();
+            check_count--; 
+            
+            loopLock.unlock(); // 关键：拿出连接后立即解锁
+
+            // 执行耗时操作 (无锁并行) 
+            // 此时 p 是线程私有的，不需要锁
+            bool isTimeout = (p->getAliveeTime() >= (_maxIdleTime * 1000));
+            // 关键优化使得网络IO不再阻塞主线程
+            bool isAlive = p->ping();  
+
+            // 处理结果 (再次短时间加锁) 
+            if (!isAlive) {
+                delete p;
+                _connectionCnt--;
+            }
+            else if (isTimeout && _connectionCnt > _initSize) {
+                // 虽然活着，但空闲超时且连接数富余，销毁缩容
+                delete p;
+                _connectionCnt--;
+            }
+            else {
+                // 连接健康，归还到队列（重新入队到尾部）
+                unique_lock<mutex> pushLock(_queueMutex);
+                _connectionQue.push(p);
+            }
+        }
+        
+        // 扫描完一轮，如果连接数不足（可能刚才销毁了一些），通知生产者补货
+        unique_lock<mutex> endLock(_queueMutex);
+        if (_connectionCnt < _initSize) {
+            _cv_producer.notify_all();
         }
     }
 }
